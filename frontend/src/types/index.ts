@@ -37,13 +37,14 @@ export interface LeaderboardItem {
   totalMinutes: number;
   formattedDuration: string;
   sessionCount: number;
-  favoriteGame: string;
+  gameCode: string;
+  gameName: string;
 }
 
 export interface LeaderboardData {
   period: string;
-  gameTypeCode: string;
-  items: LeaderboardItem[];
+  all: LeaderboardItem[];
+  byGameType: Record<string, LeaderboardItem[]>;
   availableGameTypes: GameType[];
   updatedAt: number;
 }

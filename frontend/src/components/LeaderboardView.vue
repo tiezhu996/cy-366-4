@@ -32,24 +32,10 @@ const gameTypeMap = computed<Record<string, string>>(() => {
 const currentData = computed(() => {
   const data = props.leaderboard[currentPeriod.value];
   if (selectedGameType.value === "ALL") {
-    return data;
+    return { ...data, items: data.all };
   }
-
-  const targetGameName = gameTypeMap.value[selectedGameType.value];
-  const filteredItems = data.items.filter((item) => item.favoriteGame === targetGameName);
-
-  const sortedItems = [...filteredItems].sort((a, b) => b.totalMinutes - a.totalMinutes);
-
-  const rankedItems = sortedItems.map((item, index) => ({
-    ...item,
-    rank: index + 1
-  }));
-
-  return {
-    ...data,
-    gameTypeCode: selectedGameType.value,
-    items: rankedItems
-  };
+  const gameItems = data.byGameType[selectedGameType.value] || [];
+  return { ...data, items: gameItems };
 });
 
 function getRankBadge(rank: number) {
@@ -145,7 +131,7 @@ function formatUpdateTime(timestamp: number) {
           </span>
           <span class="col-sessions">{{ item.sessionCount }} 次</span>
           <span class="col-favorite">
-            <span class="game-tag">{{ item.favoriteGame }}</span>
+            <span class="game-tag">{{ item.gameName }}</span>
           </span>
         </div>
       </div>

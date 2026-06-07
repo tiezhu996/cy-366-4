@@ -120,58 +120,216 @@ export const gameTypes: GameType[] = [
   { code: "OTHER", name: "其他游戏", iconUrl: null }
 ];
 
+const formatDuration = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}小时${mins}分`;
+};
+
+interface PlaySession {
+  memberNo: string;
+  nickname: string;
+  avatarUrl: string | null;
+  level: number;
+  gameCode: string;
+  minutes: number;
+}
+
+interface MemberGameStat {
+  memberNo: string;
+  nickname: string;
+  avatarUrl: string | null;
+  level: number;
+  gameCode: string;
+  totalMinutes: number;
+  sessionCount: number;
+}
+
+const gameNameMap: Record<string, string> = {
+  LOL: "英雄联盟",
+  CSGO: "CS2",
+  VALORANT: "无畏契约",
+  DOTA2: "DOTA2",
+  WZRY: "王者荣耀",
+  PUBG: "绝地求生",
+  APEX: "Apex英雄",
+  OTHER: "其他游戏"
+};
+
+function buildAllRanking(sessions: PlaySession[]) {
+  const memberStats: Record<string, MemberGameStat> = {};
+
+  for (const session of sessions) {
+    const key = session.memberNo;
+    if (!memberStats[key]) {
+      memberStats[key] = {
+        memberNo: session.memberNo,
+        nickname: session.nickname,
+        avatarUrl: session.avatarUrl,
+        level: session.level,
+        gameCode: "ALL",
+        totalMinutes: 0,
+        sessionCount: 0
+      };
+    }
+    memberStats[key].totalMinutes += session.minutes;
+    memberStats[key].sessionCount += 1;
+  }
+
+  const sortedStats = Object.values(memberStats)
+    .sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+  const result = [];
+  for (let i = 0; i < sortedStats.length && i < 10; i++) {
+    const stat = sortedStats[i];
+    const gameMinutes: Record<string, number> = {};
+    for (const s of sessions) {
+      if (s.memberNo === stat.memberNo) {
+        gameMinutes[s.gameCode] = (gameMinutes[s.gameCode] || 0) + s.minutes;
+      }
+    }
+    const topGameCode = Object.entries(gameMinutes)
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || "OTHER";
+    const topGameName = gameNameMap[topGameCode] || topGameCode;
+
+    result.push({
+      rank: i + 1,
+      memberNo: stat.memberNo,
+      nickname: stat.nickname,
+      avatarUrl: stat.avatarUrl,
+      level: stat.level,
+      totalMinutes: stat.totalMinutes,
+      formattedDuration: formatDuration(stat.totalMinutes),
+      sessionCount: stat.sessionCount,
+      gameCode: "ALL",
+      gameName: topGameName
+    });
+  }
+  return result;
+}
+
+function buildGameTypeRankings(sessions: PlaySession[]) {
+  const gameMemberStats: Record<string, Record<string, MemberGameStat>> = {};
+
+  for (const session of sessions) {
+    const gameCode = session.gameCode;
+    if (!gameMemberStats[gameCode]) {
+      gameMemberStats[gameCode] = {};
+    }
+    const memberStats = gameMemberStats[gameCode];
+    const key = session.memberNo;
+    if (!memberStats[key]) {
+      memberStats[key] = {
+        memberNo: session.memberNo,
+        nickname: session.nickname,
+        avatarUrl: session.avatarUrl,
+        level: session.level,
+        gameCode: gameCode,
+        totalMinutes: 0,
+        sessionCount: 0
+      };
+    }
+    memberStats[key].totalMinutes += session.minutes;
+    memberStats[key].sessionCount += 1;
+  }
+
+  const result: Record<string, LeaderboardItem[]> = {};
+  for (const [gameCode, memberStats] of Object.entries(gameMemberStats)) {
+    const gameName = gameNameMap[gameCode] || gameCode;
+    const sortedStats = Object.values(memberStats)
+      .sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+    const items = sortedStats.map((stat, i) => ({
+      rank: i + 1,
+      memberNo: stat.memberNo,
+      nickname: stat.nickname,
+      avatarUrl: stat.avatarUrl,
+      level: stat.level,
+      totalMinutes: stat.totalMinutes,
+      formattedDuration: formatDuration(stat.totalMinutes),
+      sessionCount: stat.sessionCount,
+      gameCode: gameCode,
+      gameName: gameName
+    }));
+    result[gameCode] = items;
+  }
+
+  for (const gt of gameTypes) {
+    if (gt.code !== "ALL" && !result[gt.code]) {
+      result[gt.code] = [];
+    }
+  }
+
+  return result;
+}
+
+const dailySessions: PlaySession[] = [
+  { memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 120 },
+  { memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, gameCode: "CSGO", minutes: 60 },
+  { memberNo: "M002", nickname: "暗夜游侠", avatarUrl: null, level: 4, gameCode: "LOL", minutes: 180 },
+  { memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, gameCode: "LOL", minutes: 210 },
+  { memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, gameCode: "CSGO", minutes: 180 },
+  { memberNo: "M004", nickname: "孤独的Carry", avatarUrl: null, level: 3, gameCode: "DOTA2", minutes: 90 },
+  { memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 60 },
+  { memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, gameCode: "PUBG", minutes: 90 },
+  { memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, gameCode: "VALORANT", minutes: 120 },
+  { memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, gameCode: "CSGO", minutes: 300 },
+  { memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, gameCode: "LOL", minutes: 60 },
+  { memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 120 },
+  { memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, gameCode: "WZRY", minutes: 180 },
+  { memberNo: "M009", nickname: "佛系玩家", avatarUrl: null, level: 2, gameCode: "OTHER", minutes: 0 },
+  { memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, gameCode: "VALORANT", minutes: 300 },
+  { memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, gameCode: "LOL", minutes: 90 }
+];
+
+const weeklySessions: PlaySession[] = [
+  { memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 540 },
+  { memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, gameCode: "CSGO", minutes: 240 },
+  { memberNo: "M002", nickname: "暗夜游侠", avatarUrl: null, level: 4, gameCode: "LOL", minutes: 480 },
+  { memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, gameCode: "LOL", minutes: 630 },
+  { memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, gameCode: "CSGO", minutes: 180 },
+  { memberNo: "M004", nickname: "孤独的Carry", avatarUrl: null, level: 3, gameCode: "DOTA2", minutes: 450 },
+  { memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 570 },
+  { memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, gameCode: "CSGO", minutes: 390 },
+  { memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, gameCode: "CSGO", minutes: 840 },
+  { memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 780 },
+  { memberNo: "M009", nickname: "佛系玩家", avatarUrl: null, level: 2, gameCode: "OTHER", minutes: 60 },
+  { memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, gameCode: "LOL", minutes: 660 }
+];
+
+const monthlySessions: PlaySession[] = [
+  { memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 2340 },
+  { memberNo: "M002", nickname: "暗夜游侠", avatarUrl: null, level: 4, gameCode: "LOL", minutes: 1980 },
+  { memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, gameCode: "LOL", minutes: 2910 },
+  { memberNo: "M004", nickname: "孤独的Carry", avatarUrl: null, level: 3, gameCode: "DOTA2", minutes: 1650 },
+  { memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 2370 },
+  { memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, gameCode: "CSGO", minutes: 1290 },
+  { memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, gameCode: "VALORANT", minutes: 600 },
+  { memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, gameCode: "CSGO", minutes: 3240 },
+  { memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, gameCode: "LOL", minutes: 3180 },
+  { memberNo: "M009", nickname: "佛系玩家", avatarUrl: null, level: 2, gameCode: "OTHER", minutes: 360 },
+  { memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, gameCode: "LOL", minutes: 2460 }
+];
+
 export const localLeaderboard: LeaderboardResponse = {
   daily: {
     period: "daily",
-    gameTypeCode: "ALL",
-    items: [
-      { rank: 1, memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, totalMinutes: 390, formattedDuration: "6小时30分", sessionCount: 2, favoriteGame: "英雄联盟" },
-      { rank: 2, memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, totalMinutes: 300, formattedDuration: "5小时0分", sessionCount: 1, favoriteGame: "CS2" },
-      { rank: 3, memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, totalMinutes: 300, formattedDuration: "5小时0分", sessionCount: 1, favoriteGame: "无畏契约" },
-      { rank: 4, memberNo: "M002", nickname: "暗夜游侠", avatarUrl: null, level: 4, totalMinutes: 180, formattedDuration: "3小时0分", sessionCount: 1, favoriteGame: "英雄联盟" },
-      { rank: 5, memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, totalMinutes: 180, formattedDuration: "3小时0分", sessionCount: 1, favoriteGame: "王者荣耀" },
-      { rank: 6, memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, totalMinutes: 120, formattedDuration: "2小时0分", sessionCount: 1, favoriteGame: "英雄联盟" },
-      { rank: 7, memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, totalMinutes: 120, formattedDuration: "2小时0分", sessionCount: 1, favoriteGame: "无畏契约" },
-      { rank: 8, memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, totalMinutes: 90, formattedDuration: "1小时30分", sessionCount: 1, favoriteGame: "绝地求生" },
-      { rank: 9, memberNo: "M004", nickname: "孤独的Carry", avatarUrl: null, level: 3, totalMinutes: 90, formattedDuration: "1小时30分", sessionCount: 1, favoriteGame: "DOTA2" },
-      { rank: 10, memberNo: "M009", nickname: "佛系玩家", avatarUrl: null, level: 2, totalMinutes: 0, formattedDuration: "0小时0分", sessionCount: 0, favoriteGame: "其他游戏" }
-    ],
+    all: buildAllRanking(dailySessions),
+    byGameType: buildGameTypeRankings(dailySessions),
     availableGameTypes: gameTypes,
     updatedAt: Math.floor(Date.now() / 1000)
   },
   weekly: {
     period: "weekly",
-    gameTypeCode: "ALL",
-    items: [
-      { rank: 1, memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, totalMinutes: 840, formattedDuration: "14小时0分", sessionCount: 2, favoriteGame: "CS2" },
-      { rank: 2, memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, totalMinutes: 810, formattedDuration: "13小时30分", sessionCount: 3, favoriteGame: "英雄联盟" },
-      { rank: 3, memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, totalMinutes: 780, formattedDuration: "13小时0分", sessionCount: 2, favoriteGame: "英雄联盟" },
-      { rank: 4, memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, totalMinutes: 660, formattedDuration: "11小时0分", sessionCount: 2, favoriteGame: "英雄联盟" },
-      { rank: 5, memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, totalMinutes: 570, formattedDuration: "9小时30分", sessionCount: 2, favoriteGame: "英雄联盟" },
-      { rank: 6, memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, totalMinutes: 540, formattedDuration: "9小时0分", sessionCount: 3, favoriteGame: "英雄联盟" },
-      { rank: 7, memberNo: "M002", nickname: "暗夜游侠", avatarUrl: null, level: 4, totalMinutes: 480, formattedDuration: "8小时0分", sessionCount: 2, favoriteGame: "英雄联盟" },
-      { rank: 8, memberNo: "M004", nickname: "孤独的Carry", avatarUrl: null, level: 3, totalMinutes: 450, formattedDuration: "7小时30分", sessionCount: 2, favoriteGame: "DOTA2" },
-      { rank: 9, memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, totalMinutes: 390, formattedDuration: "6小时30分", sessionCount: 2, favoriteGame: "CS2" },
-      { rank: 10, memberNo: "M009", nickname: "佛系玩家", avatarUrl: null, level: 2, totalMinutes: 60, formattedDuration: "1小时0分", sessionCount: 1, favoriteGame: "其他游戏" }
-    ],
+    all: buildAllRanking(weeklySessions),
+    byGameType: buildGameTypeRankings(weeklySessions),
     availableGameTypes: gameTypes,
     updatedAt: Math.floor(Date.now() / 1000)
   },
   monthly: {
     period: "monthly",
-    gameTypeCode: "ALL",
-    items: [
-      { rank: 1, memberNo: "M007", nickname: "一枪爆头", avatarUrl: null, level: 7, totalMinutes: 3240, formattedDuration: "54小时0分", sessionCount: 7, favoriteGame: "CS2" },
-      { rank: 2, memberNo: "M008", nickname: "五杀专业户", avatarUrl: null, level: 5, totalMinutes: 3180, formattedDuration: "53小时0分", sessionCount: 8, favoriteGame: "英雄联盟" },
-      { rank: 3, memberNo: "M003", nickname: "游戏达人", avatarUrl: null, level: 6, totalMinutes: 2910, formattedDuration: "48小时30分", sessionCount: 9, favoriteGame: "英雄联盟" },
-      { rank: 4, memberNo: "M010", nickname: "上分机器", avatarUrl: null, level: 6, totalMinutes: 2460, formattedDuration: "41小时0分", sessionCount: 6, favoriteGame: "英雄联盟" },
-      { rank: 5, memberNo: "M005", nickname: "全图视野", avatarUrl: null, level: 5, totalMinutes: 2370, formattedDuration: "39小时30分", sessionCount: 7, favoriteGame: "英雄联盟" },
-      { rank: 6, memberNo: "M001", nickname: "电竞小王子", avatarUrl: null, level: 5, totalMinutes: 2340, formattedDuration: "39小时0分", sessionCount: 8, favoriteGame: "英雄联盟" },
-      { rank: 7, memberNo: "M002", nickname: "暗夜游侠", avatarUrl: null, level: 4, totalMinutes: 1980, formattedDuration: "33小时0分", sessionCount: 6, favoriteGame: "英雄联盟" },
-      { rank: 8, memberNo: "M004", nickname: "孤独的Carry", avatarUrl: null, level: 3, totalMinutes: 1650, formattedDuration: "27小时30分", sessionCount: 5, favoriteGame: "DOTA2" },
-      { rank: 9, memberNo: "M006", nickname: "残血反杀", avatarUrl: null, level: 4, totalMinutes: 1290, formattedDuration: "21小时30分", sessionCount: 5, favoriteGame: "CS2" },
-      { rank: 10, memberNo: "M009", nickname: "佛系玩家", avatarUrl: null, level: 2, totalMinutes: 360, formattedDuration: "6小时0分", sessionCount: 3, favoriteGame: "其他游戏" }
-    ],
+    all: buildAllRanking(monthlySessions),
+    byGameType: buildGameTypeRankings(monthlySessions),
     availableGameTypes: gameTypes,
     updatedAt: Math.floor(Date.now() / 1000)
   }

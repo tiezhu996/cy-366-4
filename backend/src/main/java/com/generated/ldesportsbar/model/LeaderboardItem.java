@@ -9,6 +9,7 @@ public record LeaderboardItem(
   Integer totalMinutes,
   String formattedDuration,
   Integer sessionCount,
-  String favoriteGame
+  String gameCode,
+  String gameName
 ) {
 }

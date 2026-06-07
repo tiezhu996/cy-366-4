@@ -1,6 +1,11 @@
 package com.generated.ldesportsbar.service;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import com.generated.ldesportsbar.model.FeatureItem;
 import com.generated.ldesportsbar.model.GameType;
@@ -25,6 +30,60 @@ public class OverviewService {
     new GameType("APEX", "Apex英雄", null),
     new GameType("OTHER", "其他游戏", null)
   );
+
+  private final Map<String, String> gameNameMap = Map.of(
+    "LOL", "英雄联盟",
+    "CSGO", "CS2",
+    "VALORANT", "无畏契约",
+    "DOTA2", "DOTA2",
+    "WZRY", "王者荣耀",
+    "PUBG", "绝地求生",
+    "APEX", "Apex英雄",
+    "OTHER", "其他游戏"
+  );
+
+  static class MemberGameStat {
+    String memberNo;
+    String nickname;
+    String avatarUrl;
+    Integer level;
+    String gameCode;
+    Integer totalMinutes;
+    Integer sessionCount;
+
+    MemberGameStat(String memberNo, String nickname, String avatarUrl, Integer level, String gameCode) {
+      this.memberNo = memberNo;
+      this.nickname = nickname;
+      this.avatarUrl = avatarUrl;
+      this.level = level;
+      this.gameCode = gameCode;
+      this.totalMinutes = 0;
+      this.sessionCount = 0;
+    }
+
+    void addSession(int minutes) {
+      this.totalMinutes += minutes;
+      this.sessionCount += 1;
+    }
+  }
+
+  static class PlaySession {
+    String memberNo;
+    String nickname;
+    String avatarUrl;
+    Integer level;
+    String gameCode;
+    int minutes;
+
+    PlaySession(String memberNo, String nickname, String avatarUrl, Integer level, String gameCode, int minutes) {
+      this.memberNo = memberNo;
+      this.nickname = nickname;
+      this.avatarUrl = avatarUrl;
+      this.level = level;
+      this.gameCode = gameCode;
+      this.minutes = minutes;
+    }
+  }
 
   public OverviewResponse getOverview() {
     return new OverviewResponse(
@@ -57,64 +116,183 @@ public class OverviewService {
     );
   }
 
+  private String formatDuration(int minutes) {
+    int hours = minutes / 60;
+    int mins = minutes % 60;
+    return hours + "小时" + mins + "分";
+  }
+
+  private List<LeaderboardItem> buildAllRanking(List<PlaySession> sessions) {
+    Map<String, MemberGameStat> memberStats = new HashMap<>();
+
+    for (PlaySession session : sessions) {
+      String key = session.memberNo;
+      MemberGameStat stat = memberStats.computeIfAbsent(key,
+        k -> new MemberGameStat(session.memberNo, session.nickname, session.avatarUrl, session.level, "ALL"));
+      stat.addSession(session.minutes);
+    }
+
+    List<MemberGameStat> sortedStats = memberStats.values().stream()
+      .sorted(Comparator.comparingInt((MemberGameStat s) -> s.totalMinutes).reversed())
+      .collect(Collectors.toList());
+
+    List<LeaderboardItem> result = new ArrayList<>();
+    for (int i = 0; i < sortedStats.size() && i < 10; i++) {
+      MemberGameStat stat = sortedStats.get(i);
+      String topGame = findTopGame(sessions, stat.memberNo);
+      result.add(new LeaderboardItem(
+        i + 1,
+        stat.memberNo,
+        stat.nickname,
+        stat.avatarUrl,
+        stat.level,
+        stat.totalMinutes,
+        formatDuration(stat.totalMinutes),
+        stat.sessionCount,
+        "ALL",
+        topGame
+      ));
+    }
+    return result;
+  }
+
+  private String findTopGame(List<PlaySession> sessions, String memberNo) {
+    Map<String, Integer> gameMinutes = new HashMap<>();
+    for (PlaySession session : sessions) {
+      if (session.memberNo.equals(memberNo)) {
+        gameMinutes.merge(session.gameCode, session.minutes, Integer::sum);
+      }
+    }
+    return gameMinutes.entrySet().stream()
+      .max(Map.Entry.comparingByValue())
+      .map(e -> gameNameMap.getOrDefault(e.getKey(), e.getKey()))
+      .orElse("未知");
+  }
+
+  private Map<String, List<LeaderboardItem>> buildGameTypeRankings(List<PlaySession> sessions) {
+    Map<String, Map<String, MemberGameStat>> gameMemberStats = new HashMap<>();
+
+    for (PlaySession session : sessions) {
+      String gameCode = session.gameCode;
+      gameMemberStats.computeIfAbsent(gameCode, k -> new HashMap<>());
+
+      Map<String, MemberGameStat> memberStats = gameMemberStats.get(gameCode);
+      String key = session.memberNo;
+      MemberGameStat stat = memberStats.computeIfAbsent(key,
+        k -> new MemberGameStat(session.memberNo, session.nickname, session.avatarUrl, session.level, gameCode));
+      stat.addSession(session.minutes);
+    }
+
+    Map<String, List<LeaderboardItem>> result = new HashMap<>();
+    for (Map.Entry<String, Map<String, MemberGameStat>> gameEntry : gameMemberStats.entrySet()) {
+      String gameCode = gameEntry.getKey();
+      String gameName = gameNameMap.getOrDefault(gameCode, gameCode);
+
+      List<MemberGameStat> sortedStats = gameEntry.getValue().values().stream()
+        .sorted(Comparator.comparingInt((MemberGameStat s) -> s.totalMinutes).reversed())
+        .collect(Collectors.toList());
+
+      List<LeaderboardItem> items = new ArrayList<>();
+      for (int i = 0; i < sortedStats.size(); i++) {
+        MemberGameStat stat = sortedStats.get(i);
+        items.add(new LeaderboardItem(
+          i + 1,
+          stat.memberNo,
+          stat.nickname,
+          stat.avatarUrl,
+          stat.level,
+          stat.totalMinutes,
+          formatDuration(stat.totalMinutes),
+          stat.sessionCount,
+          gameCode,
+          gameName
+        ));
+      }
+      result.put(gameCode, items);
+    }
+
+    for (GameType gt : gameTypes) {
+      if (!"ALL".equals(gt.code()) && !result.containsKey(gt.code())) {
+        result.put(gt.code(), List.of());
+      }
+    }
+
+    return result;
+  }
+
   private LeaderboardData buildDailyLeaderboard() {
+    List<PlaySession> sessions = List.of(
+      new PlaySession("M001", "电竞小王子", null, 5, "LOL", 120),
+      new PlaySession("M001", "电竞小王子", null, 5, "CSGO", 60),
+      new PlaySession("M002", "暗夜游侠", null, 4, "LOL", 180),
+      new PlaySession("M003", "游戏达人", null, 6, "LOL", 210),
+      new PlaySession("M003", "游戏达人", null, 6, "CSGO", 180),
+      new PlaySession("M004", "孤独的Carry", null, 3, "DOTA2", 90),
+      new PlaySession("M005", "全图视野", null, 5, "LOL", 60),
+      new PlaySession("M005", "全图视野", null, 5, "PUBG", 90),
+      new PlaySession("M006", "残血反杀", null, 4, "VALORANT", 120),
+      new PlaySession("M007", "一枪爆头", null, 7, "CSGO", 300),
+      new PlaySession("M007", "一枪爆头", null, 7, "LOL", 60),
+      new PlaySession("M008", "五杀专业户", null, 5, "LOL", 120),
+      new PlaySession("M008", "五杀专业户", null, 5, "WZRY", 180),
+      new PlaySession("M009", "佛系玩家", null, 2, "OTHER", 0),
+      new PlaySession("M010", "上分机器", null, 6, "VALORANT", 300),
+      new PlaySession("M010", "上分机器", null, 6, "LOL", 90)
+    );
+
     return new LeaderboardData(
       "daily",
-      "ALL",
-      List.of(
-        new LeaderboardItem(1, "M003", "游戏达人", null, 6, 390, "6小时30分", 2, "英雄联盟"),
-        new LeaderboardItem(2, "M007", "一枪爆头", null, 7, 300, "5小时0分", 1, "CS2"),
-        new LeaderboardItem(3, "M010", "上分机器", null, 6, 300, "5小时0分", 1, "无畏契约"),
-        new LeaderboardItem(4, "M002", "暗夜游侠", null, 4, 180, "3小时0分", 1, "英雄联盟"),
-        new LeaderboardItem(5, "M008", "五杀专业户", null, 5, 180, "3小时0分", 1, "王者荣耀"),
-        new LeaderboardItem(6, "M001", "电竞小王子", null, 5, 120, "2小时0分", 1, "英雄联盟"),
-        new LeaderboardItem(7, "M006", "残血反杀", null, 4, 120, "2小时0分", 1, "无畏契约"),
-        new LeaderboardItem(8, "M005", "全图视野", null, 5, 90, "1小时30分", 1, "绝地求生"),
-        new LeaderboardItem(9, "M004", "孤独的Carry", null, 3, 90, "1小时30分", 1, "DOTA2"),
-        new LeaderboardItem(10, "M009", "佛系玩家", null, 2, 0, "0小时0分", 0, "其他游戏")
-      ),
+      buildAllRanking(sessions),
+      buildGameTypeRankings(sessions),
       gameTypes,
       (int) (System.currentTimeMillis() / 1000)
     );
   }
 
   private LeaderboardData buildWeeklyLeaderboard() {
+    List<PlaySession> sessions = List.of(
+      new PlaySession("M001", "电竞小王子", null, 5, "LOL", 540),
+      new PlaySession("M001", "电竞小王子", null, 5, "CSGO", 240),
+      new PlaySession("M002", "暗夜游侠", null, 4, "LOL", 480),
+      new PlaySession("M003", "游戏达人", null, 6, "LOL", 630),
+      new PlaySession("M003", "游戏达人", null, 6, "CSGO", 180),
+      new PlaySession("M004", "孤独的Carry", null, 3, "DOTA2", 450),
+      new PlaySession("M005", "全图视野", null, 5, "LOL", 570),
+      new PlaySession("M006", "残血反杀", null, 4, "CSGO", 390),
+      new PlaySession("M007", "一枪爆头", null, 7, "CSGO", 840),
+      new PlaySession("M008", "五杀专业户", null, 5, "LOL", 780),
+      new PlaySession("M009", "佛系玩家", null, 2, "OTHER", 60),
+      new PlaySession("M010", "上分机器", null, 6, "LOL", 660)
+    );
+
     return new LeaderboardData(
       "weekly",
-      "ALL",
-      List.of(
-        new LeaderboardItem(1, "M007", "一枪爆头", null, 7, 840, "14小时0分", 2, "CS2"),
-        new LeaderboardItem(2, "M003", "游戏达人", null, 6, 810, "13小时30分", 3, "英雄联盟"),
-        new LeaderboardItem(3, "M008", "五杀专业户", null, 5, 780, "13小时0分", 2, "英雄联盟"),
-        new LeaderboardItem(4, "M010", "上分机器", null, 6, 660, "11小时0分", 2, "英雄联盟"),
-        new LeaderboardItem(5, "M005", "全图视野", null, 5, 570, "9小时30分", 2, "英雄联盟"),
-        new LeaderboardItem(6, "M001", "电竞小王子", null, 5, 540, "9小时0分", 3, "英雄联盟"),
-        new LeaderboardItem(7, "M002", "暗夜游侠", null, 4, 480, "8小时0分", 2, "英雄联盟"),
-        new LeaderboardItem(8, "M004", "孤独的Carry", null, 3, 450, "7小时30分", 2, "DOTA2"),
-        new LeaderboardItem(9, "M006", "残血反杀", null, 4, 390, "6小时30分", 2, "CS2"),
-        new LeaderboardItem(10, "M009", "佛系玩家", null, 2, 60, "1小时0分", 1, "其他游戏")
-      ),
+      buildAllRanking(sessions),
+      buildGameTypeRankings(sessions),
       gameTypes,
       (int) (System.currentTimeMillis() / 1000)
     );
   }
 
   private LeaderboardData buildMonthlyLeaderboard() {
+    List<PlaySession> sessions = List.of(
+      new PlaySession("M001", "电竞小王子", null, 5, "LOL", 2340),
+      new PlaySession("M002", "暗夜游侠", null, 4, "LOL", 1980),
+      new PlaySession("M003", "游戏达人", null, 6, "LOL", 2910),
+      new PlaySession("M004", "孤独的Carry", null, 3, "DOTA2", 1650),
+      new PlaySession("M005", "全图视野", null, 5, "LOL", 2370),
+      new PlaySession("M006", "残血反杀", null, 4, "CSGO", 1290),
+      new PlaySession("M006", "残血反杀", null, 4, "VALORANT", 600),
+      new PlaySession("M007", "一枪爆头", null, 7, "CSGO", 3240),
+      new PlaySession("M008", "五杀专业户", null, 5, "LOL", 3180),
+      new PlaySession("M009", "佛系玩家", null, 2, "OTHER", 360),
+      new PlaySession("M010", "上分机器", null, 6, "LOL", 2460)
+    );
+
     return new LeaderboardData(
       "monthly",
-      "ALL",
-      List.of(
-        new LeaderboardItem(1, "M007", "一枪爆头", null, 7, 3240, "54小时0分", 7, "CS2"),
-        new LeaderboardItem(2, "M008", "五杀专业户", null, 5, 3180, "53小时0分", 8, "英雄联盟"),
-        new LeaderboardItem(3, "M003", "游戏达人", null, 6, 2910, "48小时30分", 9, "英雄联盟"),
-        new LeaderboardItem(4, "M010", "上分机器", null, 6, 2460, "41小时0分", 6, "英雄联盟"),
-        new LeaderboardItem(5, "M005", "全图视野", null, 5, 2370, "39小时30分", 7, "英雄联盟"),
-        new LeaderboardItem(6, "M001", "电竞小王子", null, 5, 2340, "39小时0分", 8, "英雄联盟"),
-        new LeaderboardItem(7, "M002", "暗夜游侠", null, 4, 1980, "33小时0分", 6, "英雄联盟"),
-        new LeaderboardItem(8, "M004", "孤独的Carry", null, 3, 1650, "27小时30分", 5, "DOTA2"),
-        new LeaderboardItem(9, "M006", "残血反杀", null, 4, 1290, "21小时30分", 5, "CS2"),
-        new LeaderboardItem(10, "M009", "佛系玩家", null, 2, 360, "6小时0分", 3, "其他游戏")
-      ),
+      buildAllRanking(sessions),
+      buildGameTypeRankings(sessions),
       gameTypes,
       (int) (System.currentTimeMillis() / 1000)
     );
