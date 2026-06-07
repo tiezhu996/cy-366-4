@@ -17,20 +17,39 @@ const periodOptions = [
   { value: "monthly", label: "月榜" }
 ] as const;
 
+const gameTypes = computed<GameType[]>(() => {
+  return props.leaderboard[currentPeriod.value]?.availableGameTypes || [];
+});
+
+const gameTypeMap = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  gameTypes.value.forEach((gt) => {
+    map[gt.code] = gt.name;
+  });
+  return map;
+});
+
 const currentData = computed(() => {
   const data = props.leaderboard[currentPeriod.value];
   if (selectedGameType.value === "ALL") {
     return data;
   }
+
+  const targetGameName = gameTypeMap.value[selectedGameType.value];
+  const filteredItems = data.items.filter((item) => item.favoriteGame === targetGameName);
+
+  const sortedItems = [...filteredItems].sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+  const rankedItems = sortedItems.map((item, index) => ({
+    ...item,
+    rank: index + 1
+  }));
+
   return {
     ...data,
     gameTypeCode: selectedGameType.value,
-    items: data.items.slice(0, 10)
+    items: rankedItems
   };
-});
-
-const gameTypes = computed<GameType[]>(() => {
-  return props.leaderboard[currentPeriod.value]?.availableGameTypes || [];
 });
 
 function getRankBadge(rank: number) {
