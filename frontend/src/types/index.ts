@@ -22,6 +22,38 @@ export interface OperationRecord {
   priority: string;
 }
 
+export interface GameType {
+  code: string;
+  name: string;
+  iconUrl: string | null;
+}
+
+export interface LeaderboardItem {
+  rank: number;
+  memberNo: string;
+  nickname: string;
+  avatarUrl: string | null;
+  level: number;
+  totalMinutes: number;
+  formattedDuration: string;
+  sessionCount: number;
+  favoriteGame: string;
+}
+
+export interface LeaderboardData {
+  period: string;
+  gameTypeCode: string;
+  items: LeaderboardItem[];
+  availableGameTypes: GameType[];
+  updatedAt: number;
+}
+
+export interface LeaderboardResponse {
+  daily: LeaderboardData;
+  weekly: LeaderboardData;
+  monthly: LeaderboardData;
+}
+
 export interface OverviewResponse {
   appName: string;
   appCode: string;
@@ -29,4 +61,5 @@ export interface OverviewResponse {
   features: FeatureItem[];
   kpis: KpiItem[];
   records: OperationRecord[];
+  leaderboard: LeaderboardResponse;
 }

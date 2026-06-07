@@ -8,6 +8,7 @@ public record OverviewResponse(
   String description,
   List<FeatureItem> features,
   List<KpiItem> kpis,
-  List<OperationRecord> records
+  List<OperationRecord> records,
+  LeaderboardResponse leaderboard
 ) {
 }
