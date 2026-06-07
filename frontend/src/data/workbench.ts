@@ -1,4 +1,4 @@
-import type { FeatureItem, KpiItem, OperationRecord, LeaderboardResponse, GameType } from "../types";
+import type { FeatureItem, KpiItem, OperationRecord, LeaderboardResponse, LeaderboardItem, GameType } from "../types";
 
 export const localFeatures: FeatureItem[] = [
   {
